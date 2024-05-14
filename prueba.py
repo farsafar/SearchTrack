@@ -1,58 +1,83 @@
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.image import Image
+from kivy.clock import Clock
+from kivy.graphics.texture import Texture
+from kivy.uix.label import Label
+from kivy.core.window import Window
+
 from ultralytics import YOLO
 import cv2
 
-# Cargar el modelo YOLOv8
-model = YOLO('yolov8n.pt')
+class CameraApp(App):
+    def build(self):
+        self.model = YOLO('yolov8n.pt')
+        self.cap = cv2.VideoCapture(0)
+        self.niveles = 0
+        self.puntaje = 0
 
-# Cargar el video
-cap = cv2.VideoCapture(0)  
+        layout = BoxLayout(orientation='vertical')
 
-# Inicializar la variable de niveles y puntaje
-niveles = 0
-puntaje = 0
+        self.image = Image(size_hint=(1, 0.8))
+        layout.add_widget(self.image)
 
-while True:
-    ret, frame = cap.read()
+        self.message_label = Label(text='', size_hint=(1, 0.1), font_size=24, color=(1, 1, 1, 1))
+        layout.add_widget(self.message_label)
 
-    if not ret:
-        break
+        self.score_label = Label(text='Puntaje: 0', size_hint=(1, 0.1), font_size=24, color=(1, 1, 1, 1))
+        layout.add_widget(self.score_label)
 
-    # Detectar y rastrear objetos
-    results = model.track(frame, persist=True)
+        Clock.schedule_interval(self.update, 1.0 / 30.0)
 
-    # Verificar si se detecta un objeto y actualizar el puntaje
-    for result in results:
-        if niveles == 0 and result.boxes.cls[0] == 0:  
-            cv2.putText(frame, "Persona detectada. Busca un perro", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            niveles = 1
-            puntaje += 10
-        elif niveles == 1 and result.boxes.cls[0] == 16:  
-            cv2.putText(frame, "Perro detectado. Busca un carro", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            niveles = 2
-            puntaje += 10
-        elif niveles == 2 and result.boxes.cls[0] == 2:  
-            cv2.putText(frame, "Carro detectado. Busca un gato", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            niveles = 3
-            puntaje += 10
-        elif niveles == 3 and result.boxes.cls[0] == 17:  
-            cv2.putText(frame, "Gato detectado. Busca un árbol", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            niveles = 4
-            puntaje += 10
-        elif niveles == 4 and result.boxes.cls[0] == 5:  
-            cv2.putText(frame, "Árbol detectado. ¡Has completado el juego!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            niveles = 5
-            puntaje += 10
-            break
+        return layout
 
-    # Mostrar el puntaje en la pantalla
-    cv2.putText(frame, f"Puntaje: {puntaje}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    def update(self, dt):
+        ret, frame = self.cap.read()
 
-    # Mostrar los resultados en el video
-    annotated_frame = results[0].plot()
-    cv2.imshow('Detected Objects', frame)
+        if not ret:
+            return
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        results = self.model.track(frame, persist=True)
 
-cap.release()
-cv2.destroyAllWindows()
+        for result in results:
+            if self.niveles == 0 and result.boxes.cls[0] == 0:
+                self.message_label.text = "Persona detectada. Busca un perro"
+                self.niveles = 1
+                self.puntaje += 10
+            elif self.niveles == 1 and result.boxes.cls[0] == 16:
+                self.message_label.text = "Perro detectado. Busca un carro"
+                self.niveles = 2
+                self.puntaje += 10
+            elif self.niveles == 2 and result.boxes.cls[0] == 2:
+                self.message_label.text = "Carro detectado. Busca un gato"
+                self.niveles = 3
+                self.puntaje += 10
+            elif self.niveles == 3 and result.boxes.cls[0] == 17:
+                self.message_label.text = "Gato detectado. Busca un árbol"
+                self.niveles = 4
+                self.puntaje += 10
+            elif self.niveles == 4 and result.boxes.cls[0] == 5:
+                self.message_label.text = "Árbol detectado. ¡Has completado el juego!"
+                self.niveles = 5
+                self.puntaje += 10
+                break
+
+        # Mostrar el puntaje actualizado
+        self.score_label.text = f"Puntaje: {self.puntaje}"
+
+        # Mostrar la imagen con los resultados
+        annotated_frame = results[0].plot()
+        buf1 = cv2.flip(annotated_frame, 0)
+        buf = buf1.tostring()
+        texture = Texture.create(size=(annotated_frame.shape[1], annotated_frame.shape[0]), colorfmt='bgr')
+        texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+        self.image.texture = texture
+
+    def on_stop(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    Window.size = (800, 600)
+    Window.clearcolor = (0.1, 0.1, 0.1, 1)
+    CameraApp().run()
